@@ -1,0 +1,1238 @@
+{
+  "name": "FINAL",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "scan-status",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "8cddae15-5c78-45b4-b56b-feca87570727",
+      "name": "Webhook: GET Scan Status",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        528,
+        288
+      ],
+      "webhookId": "ca1e8d6f-26a8-48d6-b322-4d900e907266"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate API Key from header\nconst apiKey = $request.headers['x-api-key'];\nconst configuredApiKey = $('Workflow Configuration1').item.json.uiApiKey;\n\nif (!apiKey || apiKey !== configuredApiKey) {\n  throw new Error(JSON.stringify({\n    statusCode: 401,\n    body: { error: 'Unauthorized: Invalid or missing API key' }\n  }));\n}\n\n// Pass through query parameters for filtering\nconst queryParams = $request.query || {};\nconst status = queryParams.status || null;\nconst limit = queryParams.limit ? parseInt(queryParams.limit) : null;\n\nreturn [{\n  json: {\n    validated: true,\n    status: status,\n    limit: limit\n  }\n}];"
+      },
+      "id": "8acfc7a3-e0c1-4b3b-82d3-d3e866e69645",
+      "name": "Validate API Key (GET)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        752,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Workflow Configuration1').first().json.sheetId }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "DriveScans"
+        },
+        "options": {}
+      },
+      "id": "fa18c191-815b-49f2-95f1-0e08b071d7f2",
+      "name": "Read Scan Results",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        976,
+        288
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "qj1CyLMB24SOtN6S",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get query parameters from the webhook\nconst queryParams = $('Webhook: GET Scan Status').item.json.query || {};\nconst statusFilter = queryParams.status;\nconst limit = queryParams.limit ? parseInt(queryParams.limit) : null;\n\n// Get all items from the Google Sheets read operation\nconst allItems = $input.all();\n\n// Filter results by status if provided\nlet filteredItems = allItems;\nif (statusFilter) {\n  filteredItems = allItems.filter(item => {\n    const status = item.json.Status || item.json.status;\n    return status && status.toLowerCase() === statusFilter.toLowerCase();\n  });\n}\n\n// Apply limit if provided\nif (limit && limit > 0) {\n  filteredItems = filteredItems.slice(0, limit);\n}\n\n// Format results as JSON array\nconst results = filteredItems.map(item => ({\n  fileName: item.json.FileName || item.json.fileName,\n  fileId: item.json.FileID || item.json.fileId,\n  sha256: item.json.SHA256 || item.json.sha256,\n  scanDate: item.json.ScanDate || item.json.scanDate,\n  status: item.json.Status || item.json.status,\n  malicious: item.json.Malicious || item.json.malicious,\n  suspicious: item.json.Suspicious || item.json.suspicious,\n  undetected: item.json.Undetected || item.json.undetected,\n  harmless: item.json.Harmless || item.json.harmless,\n  quarantined: item.json.Quarantined || item.json.quarantined,\n  vtLink: item.json.VTLink || item.json.vtLink\n}));\n\n// Return the filtered and formatted results\nreturn [{ json: { results, total: results.length } }];"
+      },
+      "id": "95ec5054-01e6-44f1-8155-4e4fb2d7c61a",
+      "name": "Filter and Format Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "e980307c-4ea8-4a94-90a6-6ce2f4c8ef42",
+      "name": "Return Scan Status",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1424,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "quarantine",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "26f1782c-ec2c-4327-b19b-59a6e9425d00",
+      "name": "Webhook: POST Quarantine",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        528,
+        512
+      ],
+      "webhookId": "495c194c-dd29-4546-b9d2-fd7b06f09191"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate API Key from header\nconst apiKey = $('Webhook: POST Quarantine').item.json.headers['x-api-key'];\nconst validApiKey = $('Workflow Configuration1').item.json.uiApiKey;\n\nif (!apiKey || apiKey !== validApiKey) {\n  throw new Error(JSON.stringify({\n    statusCode: 401,\n    body: { error: 'Unauthorized: Invalid API Key' }\n  }));\n}\n\n// Extract driveId from request body\nconst body = $('Webhook: POST Quarantine').item.json.body;\nconst driveId = body.driveId;\n\nif (!driveId) {\n  throw new Error(JSON.stringify({\n    statusCode: 400,\n    body: { error: 'Bad Request: driveId is required' }\n  }));\n}\n\n// Pass through driveId for file move\nreturn [{\n  json: {\n    driveId: driveId,\n    validated: true\n  }\n}];"
+      },
+      "id": "10cd0a5d-3a90-4da7-a3ba-2ac5c61ec502",
+      "name": "Validate API Key (POST Quarantine)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        752,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "move",
+        "fileId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.driveId }}"
+        },
+        "driveId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "My Drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Workflow Configuration1').first().json.quarantineFolderId }}"
+        }
+      },
+      "id": "584d89a2-d29c-4f74-8ba7-c09a45591c1e",
+      "name": "Move File to Quarantine (Manual)",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        976,
+        512
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "cUIwr2Q8diBSo6vD",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Workflow Configuration1').first().json.sheetId }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "DriveScans"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "drive_id": "={{ $json.driveId }}",
+            "quarantine_time": "={{ $now.toISO() }}",
+            "status": "quarantined"
+          },
+          "matchingColumns": [
+            "drive_id"
+          ],
+          "schema": [
+            {
+              "id": "drive_id",
+              "displayName": "drive_id",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "quarantine_time",
+              "displayName": "quarantine_time",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "848e0629-0610-4b15-a0fb-f21c141a7ff7",
+      "name": "Update Sheet Status (Manual Quarantine)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1200,
+        512
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "qj1CyLMB24SOtN6S",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": true,\n  \"message\": \"File quarantined successfully\"\n}",
+        "options": {}
+      },
+      "id": "03e7308b-3615-473a-a3f0-05881f2ff94b",
+      "name": "Return Quarantine Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1424,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "id-1",
+              "name": "driveFolderId",
+              "value": "1MjQ0vDxUyLRXRDOnmGlEqyH7TjYV2w1m",
+              "type": "string"
+            },
+            {
+              "id": "id-2",
+              "name": "quarantineFolderId",
+              "value": "1CAFzeGRENa27kgxi_mSwXS0rm940hS1A",
+              "type": "string"
+            },
+            {
+              "id": "id-3",
+              "name": "sheetId",
+              "value": "1zHL_NH6QA82PAZLvKnB1hAZqwED8Nzq0uxLrTN-LkNk",
+              "type": "string"
+            },
+            {
+              "id": "id-4",
+              "name": "adminEmail",
+              "value": "1hk22cs115@hkbk.edu.in",
+              "type": "string"
+            },
+            {
+              "id": "id-5",
+              "name": "uiApiKey",
+              "value": "my-secret-ui-key-60065",
+              "type": "string"
+            },
+            {
+              "id": "id-6",
+              "name": "vtApiKey",
+              "value": "7c9a6da846b2c94755a83ffc921a99aa0c125cc5cfe6bc1d4187a4baf31eddea",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "a9e5348b-6fee-44b7-9592-b41847d24b59",
+      "name": "Workflow Configuration1",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        752,
+        -128
+      ]
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyX",
+              "value": 5,
+              "unit": "minutes"
+            }
+          ]
+        },
+        "triggerOn": "specificFolder",
+        "folderToWatch": {
+          "__rl": true,
+          "mode": "id",
+          "value": "1MjQ0vDxUyLRXRDOnmGlEqyH7TjYV2w1m"
+        },
+        "event": "fileCreated",
+        "options": {}
+      },
+      "id": "c8218f11-7469-48c5-8a3e-e68301e1ffaf",
+      "name": "New File in Drive Folder1",
+      "type": "n8n-nodes-base.googleDriveTrigger",
+      "typeVersion": 1,
+      "position": [
+        528,
+        -128
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "cUIwr2Q8diBSo6vD",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.id }}"
+        },
+        "options": {
+          "binaryPropertyName": "data"
+        }
+      },
+      "id": "e1a13f5f-c24b-427e-9d88-3f76ea95f019",
+      "name": "Download File Binary1",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        976,
+        -128
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "cUIwr2Q8diBSo6vD",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Compute SHA256 for each incoming item and pass binary through\nconst crypto = require('crypto');\n\nlet items;\ntry {\n  // preferred: get all items (works when the node is configured to run once)\n  items = $input.all();\n} catch (e) {\n  // fallback: single-item mode\n  items = [$input.item];\n}\n\nconst output = [];\n\nfor (const item of items) {\n  try {\n    const json = item.json || {};\n    const binary = item.binary || {};\n\n    // If no binary present, return an informative row (doesn't throw)\n    const binKeys = Object.keys(binary);\n    if (binKeys.length === 0) {\n      output.push({\n        json: {\n          fileId: json.id || null,\n          filename: json.name || null,\n          drive_id: json.id || null,\n          size: json.size || null,\n          mimeType: json.mimeType || null,\n          sha256: null,\n          error: 'no-binary'\n        }\n      });\n      continue;\n    }\n\n    // Use the first binary property (common pattern in n8n)\n    const binKey = binKeys[0];\n    const binObj = binary[binKey];\n\n    // binary data is base64 in binObj.data\n    if (!binObj || !binObj.data) {\n      output.push({\n        json: {\n          fileId: json.id || null,\n          filename: json.name || null,\n          sha256: null,\n          error: 'binary-missing-data-field'\n        }\n      });\n      continue;\n    }\n\n    // Convert base64 -> Buffer\n    const buffer = Buffer.from(binObj.data, 'base64');\n\n    // Compute SHA256\n    const sha = crypto.createHash('sha256').update(buffer).digest('hex');\n\n    // push output and also include the same binary under same property name so downstream nodes keep it\n    output.push({\n      json: {\n        fileId: json.id || null,\n        filename: json.name || null,\n        drive_id: json.id || null,\n        size: json.size || null,\n        mimeType: json.mimeType || null,\n        sha256: sha\n      },\n      binary: {\n        // preserve exact binary object so downstream nodes can use it as before\n        [binKey]: binObj\n      }\n    });\n\n  } catch (err) {\n    // Don't crash the whole run; return an error row for this item\n    output.push({\n      json: {\n        fileId: item.json?.id || null,\n        filename: item.json?.name || null,\n        sha256: null,\n        error: `compute-failed: ${err.message}`\n      }\n    });\n  }\n}\n\nreturn output;\n"
+      },
+      "id": "700bb506-08d4-4b79-aea7-dda36a141548",
+      "name": "Compute SHA256 Hash1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "id-1",
+              "leftValue": "={{ $json.size }}",
+              "rightValue": "33554432",
+              "operator": {
+                "type": "number",
+                "operation": "lte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "d82a8c1c-5fd1-46e0-b225-b91dbaf34d36",
+      "name": "Check File Size1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1424,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://www.virustotal.com/api/v3/files",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $('Workflow Configuration1').first().json.vtApiKey }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "8efc7c86-fd4f-4fa4-a0e6-69bc9c1c8806",
+      "name": "Upload to VirusTotal (Small Files)1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1872,
+        -128
+      ],
+      "alwaysOutputData": false,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "fQX3hakLuw0m1Ivq",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://www.virustotal.com/api/v3/files/upload_url",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-apikey",
+              "value": "={{ $('Workflow Configuration1').first().json.vtApiKey }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "e9f647ea-c366-4a0e-9260-b4bf1d179915",
+      "name": "Get Upload URL (Large Files)1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1648,
+        64
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.data }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-apikey",
+              "value": "={{ $('Workflow Configuration1').first().json.vtApiKey }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "f3a1aa48-15e3-4cd4-be35-88479ea70c8f",
+      "name": "Upload Large File to URL1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1872,
+        64
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://www.virustotal.com/api/v3/analyses/{{ $json.data.id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-apikey",
+              "value": "={{ $('Workflow Configuration1').first().json.vtApiKey }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "982c186e-d084-4e93-800f-accedb1b164a",
+      "name": "Poll Analysis Status1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        2096,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Normalize VirusTotal results\nconst inputData = $input.item.json;\n\n// Extract VirusTotal response data\nconst vtData = inputData.data || inputData;\nconst stats = vtData.attributes?.last_analysis_stats || {};\nconst sha256 = vtData.attributes?.sha256 || inputData.sha256;\nconst analysisId = vtData.id || inputData.vt_analysis_id;\nconst firstSeen = vtData.attributes?.first_submission_date || Math.floor(Date.now() / 1000);\n\n// Extract positives and total engines\nconst positives = stats.malicious || 0;\nconst totalEngines = (stats.harmless || 0) + (stats.malicious || 0) + (stats.suspicious || 0) + (stats.undetected || 0) + (stats.timeout || 0) + (stats.failure || 0);\n\n// Determine status\nconst status = positives > 0 ? 'malicious' : 'safe';\n\n// Generate VirusTotal report URL\nconst vtReportUrl = `https://www.virustotal.com/gui/file/${sha256}/detection`;\n\n// Prepare output\nconst output = {\n  fileId: inputData.fileId,\n  filename: inputData.filename,\n  sha256: sha256,\n  positives: positives,\n  total_engines: totalEngines,\n  status: status,\n  vt_report_url: vtReportUrl,\n  vt_analysis_id: analysisId,\n  first_seen: new Date(firstSeen * 1000).toISOString(),\n  raw_response: JSON.stringify(vtData)\n};\n\nreturn output;"
+      },
+      "id": "f3f8b3e6-4987-47a0-9e35-c1bb937ed128",
+      "name": "Normalize VT Results1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2320,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Workflow Configuration1').first().json.sheetId }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "DriveScans"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "c9e405ff-d3d3-4c9b-8930-cafabbace20b",
+      "name": "Write to Google Sheets1",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2544,
+        -128
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "qj1CyLMB24SOtN6S",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "id-1",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "malicious",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a93363f3-8584-442a-aeb8-280484b0da61",
+      "name": "Check If Malicious1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2768,
+        -128
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "move",
+        "fileId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.drive_id }}"
+        },
+        "driveId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "My Drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Workflow Configuration1').first().json.quarantineFolderId }}"
+        }
+      },
+      "id": "f5e4c946-5533-416a-90ca-f30bb01dd2a8",
+      "name": "Move to Quarantine Folder1",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        3216,
+        -128
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "cUIwr2Q8diBSo6vD",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Workflow Configuration1').first().json.sheetId }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "DriveScans"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "sha256": "={{ $json.sha256 }}",
+            "quarantine_time": "={{ new Date().toISOString() }}",
+            "status": "quarantined"
+          },
+          "matchingColumns": [
+            "sha256"
+          ],
+          "schema": [
+            {
+              "id": "sha256",
+              "displayName": "sha256",
+              "required": false,
+              "defaultMatch": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "quarantine_time",
+              "displayName": "quarantine_time",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": false
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "50b9b333-d5b5-42be-a266-e6d3d5566890",
+      "name": "Update Sheet Quarantine Status1",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        3440,
+        -128
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "qj1CyLMB24SOtN6S",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "rescan",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "40623ba7-4e6d-4093-8379-47269417c136",
+      "name": "Webhook: POST Rescan1",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        528,
+        64
+      ],
+      "webhookId": "1d77b18f-1496-4d6f-9342-d1b576009070"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate API Key from header\nconst apiKey = $request.headers['x-api-key'];\nconst configuredApiKey = $('Workflow Configuration1').item.json.uiApiKey;\n\nif (!apiKey || apiKey !== configuredApiKey) {\n  throw new Error(JSON.stringify({\n    statusCode: 401,\n    body: { error: 'Unauthorized: Invalid or missing API key' }\n  }));\n}\n\n// Extract driveId or id from request body\nconst body = $request.body;\nconst driveId = body.driveId || body.id;\n\nif (!driveId) {\n  throw new Error(JSON.stringify({\n    statusCode: 400,\n    body: { error: 'Bad Request: driveId or id is required in request body' }\n  }));\n}\n\n// Pass through driveId for file download\nreturn [{\n  json: {\n    driveId: driveId,\n    validated: true\n  }\n}];"
+      },
+      "id": "9d3fa0d6-3a6e-4792-8822-f6c1df282231",
+      "name": "Validate API Key (POST Rescan)1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        752,
+        64
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.driveId }}"
+        },
+        "options": {
+          "binaryPropertyName": "data"
+        }
+      },
+      "id": "72f8eee5-5e2d-4c56-a37d-e63dc2113cd8",
+      "name": "Download File for Rescan1",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        976,
+        64
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "cUIwr2Q8diBSo6vD",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"message\": \"Rescan completed\",\n  \"data\": {{ $json.toJsonString() }}\n}",
+        "options": {}
+      },
+      "id": "e1e9aaa5-0778-4138-a833-404dec033cb4",
+      "name": "Return Rescan Success1",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        2544,
+        64
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "rajatpdhkbk@gmail.com",
+        "subject": "ALERT: Malicious File Detected in Google Drive",
+        "message": "=<h2>🚨 Malicious File Detected</h2> <p>A malicious file has been detected in your Google Drive and requires immediate attention.</p>  <h3>File Details:</h3> <ul>   <li><strong>Filename:</strong> {{ $json.filename }}</li>   <li><strong>SHA256:</strong> {{ $json.sha256 }}</li>   <li><strong>Detection Rate:</strong> {{ $json.positives }} / {{ $json.total_engines }} engines flagged this file</li>   <li><strong>Drive ID:</strong> {{ $json.drive_id }}</li> </ul>  <h3>Actions:</h3> <p><a href=\"{{ $json.vt_report_url }}\" style=\"background-color: #ff6d5a; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;\">View VirusTotal Report</a></p>  <p style=\"margin-top: 20px; color: #666; font-size: 12px;\">This file will be automatically moved to the quarantine folder.</p>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        2992,
+        -128
+      ],
+      "id": "9c14f7d4-5d06-4ad4-b669-f3b1b63cae9a",
+      "name": "Send a message1",
+      "webhookId": "e16e3f2e-7cd8-4b11-9dc7-1045b0f18b9f",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "jWXbC1VaMyG7AKMJ",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "triggerOn": "specificFolder",
+        "folderToWatch": {
+          "__rl": true,
+          "value": "1CAFzeGRENa27kgxi_mSwXS0rm940hS1A",
+          "mode": "id"
+        },
+        "event": "fileCreated",
+        "options": {}
+      },
+      "id": "d41f5b8a-458c-45cf-a7c6-e65743a06d6b",
+      "name": "When File Created in Google Drive",
+      "type": "n8n-nodes-base.googleDriveTrigger",
+      "typeVersion": 1,
+      "position": [
+        528,
+        720
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "cUIwr2Q8diBSo6vD",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "id-1",
+              "name": "recipientEmail",
+              "value": "rajatpdhkbk@gmail.com",
+              "type": "string"
+            },
+            {
+              "id": "f1829066-0a91-475a-b462-05e00e99318b",
+              "name": "recipientEmail",
+              "value": "1hk22cs133@hkbk.edu.in",
+              "type": "string"
+            },
+            {
+              "id": "fbeefe73-aa74-4985-a1c6-da58986edc6d",
+              "name": "recipientEmail",
+              "value": "1hk22cs098@hkbk.edu.in",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "38949c72-5dae-4985-9436-0f944c14b1fe",
+      "name": "Workflow Configuration",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        752,
+        720
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Workflow Configuration').first().json.recipientEmail }}",
+        "subject": "=Threat Detection: {{ $json.name }}",
+        "message": "=A Threat has appeared in Google Drive, It is quarantined for safety measuresr.\n\nFile Name: {{ $json.name }}\nFile Type: {{ $json.mimeType }}\nCreated: {{ $json.createdTime }}\nFile Link: {{ $json.webViewLink }}\n{Proceed with safety}",
+        "options": {}
+      },
+      "id": "87375666-a7d5-41e1-9c75-617a4c575b68",
+      "name": "Send Email Notification",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        976,
+        720
+      ],
+      "webhookId": "8d1b4085-e8b1-4b78-ba6e-cff687211478",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "jWXbC1VaMyG7AKMJ",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook: GET Scan Status": {
+      "main": [
+        [
+          {
+            "node": "Validate API Key (GET)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate API Key (GET)": {
+      "main": [
+        [
+          {
+            "node": "Read Scan Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Scan Results": {
+      "main": [
+        [
+          {
+            "node": "Filter and Format Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter and Format Results": {
+      "main": [
+        [
+          {
+            "node": "Return Scan Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook: POST Quarantine": {
+      "main": [
+        [
+          {
+            "node": "Validate API Key (POST Quarantine)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate API Key (POST Quarantine)": {
+      "main": [
+        [
+          {
+            "node": "Move File to Quarantine (Manual)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Move File to Quarantine (Manual)": {
+      "main": [
+        [
+          {
+            "node": "Update Sheet Status (Manual Quarantine)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Sheet Status (Manual Quarantine)": {
+      "main": [
+        [
+          {
+            "node": "Return Quarantine Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Workflow Configuration1": {
+      "main": [
+        [
+          {
+            "node": "Download File Binary1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "New File in Drive Folder1": {
+      "main": [
+        [
+          {
+            "node": "Workflow Configuration1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download File Binary1": {
+      "main": [
+        [
+          {
+            "node": "Compute SHA256 Hash1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute SHA256 Hash1": {
+      "main": [
+        [
+          {
+            "node": "Check File Size1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check File Size1": {
+      "main": [
+        [
+          {
+            "node": "Upload to VirusTotal (Small Files)1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Upload URL (Large Files)1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload to VirusTotal (Small Files)1": {
+      "main": [
+        [
+          {
+            "node": "Poll Analysis Status1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Upload URL (Large Files)1": {
+      "main": [
+        [
+          {
+            "node": "Upload Large File to URL1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Large File to URL1": {
+      "main": [
+        [
+          {
+            "node": "Poll Analysis Status1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Poll Analysis Status1": {
+      "main": [
+        [
+          {
+            "node": "Normalize VT Results1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize VT Results1": {
+      "main": [
+        [
+          {
+            "node": "Write to Google Sheets1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Return Rescan Success1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write to Google Sheets1": {
+      "main": [
+        [
+          {
+            "node": "Check If Malicious1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check If Malicious1": {
+      "main": [
+        [
+          {
+            "node": "Send a message1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Move to Quarantine Folder1": {
+      "main": [
+        [
+          {
+            "node": "Update Sheet Quarantine Status1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook: POST Rescan1": {
+      "main": [
+        [
+          {
+            "node": "Validate API Key (POST Rescan)1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate API Key (POST Rescan)1": {
+      "main": [
+        [
+          {
+            "node": "Download File for Rescan1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download File for Rescan1": {
+      "main": [
+        [
+          {
+            "node": "Compute SHA256 Hash1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a message1": {
+      "main": [
+        [
+          {
+            "node": "Move to Quarantine Folder1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When File Created in Google Drive": {
+      "main": [
+        [
+          {
+            "node": "Workflow Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Workflow Configuration": {
+      "main": [
+        [
+          {
+            "node": "Send Email Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "cc8bf56b-a0ad-473c-b88c-2d8692414aba",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "e9f00e694c94d764cd37bde3cf9eab7493b3193f8db409088ad03a1a25743b3b"
+  },
+  "id": "XCYDQZdRy8BsbMfT",
+  "tags": []
+}
