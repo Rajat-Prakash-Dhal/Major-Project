@@ -1,0 +1,27 @@
+{
+  "name": "gdrive-folder-monitor",
+  "version": "1.0.0",
+  "description": "Production-ready Google Drive folder monitoring webapp with real-time updates",
+  "keywords": [
+    "google-drive",
+    "monitoring",
+    "socket.io",
+    "polling"
+  ],
+  "license": "MIT",
+  "author": "",
+  "type": "commonjs",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "build": "echo 'No build step required'",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.6.1",
+    "googleapis": "^118.0.0",
+    "dotenv": "^16.0.3"
+  }
+}
